@@ -1,62 +1,83 @@
-import wikipedia, getpass
-from langchain.prompts import PromptTemplate
-from langchain_community.llms import Cohere
-from langchain.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
+from langchain import PromptTemplate
+from langchain.llms import Cohere
+from pydantic import BaseModel
+from typing import Optional
+import wikipediaapi
+import getpass
+from IPython.display import display
 import ipywidgets as widgets
-from IPython.display import display, clear_output
 
-# 1. Connect to AI
-api_key = getpass.getpass("Enter Cohere API Key: ")
-llm = Cohere(cohere_api_key=api_key)
+COHERE_API_KEY = getpass.getpass('Enter your Cohere API Key: ')
+cohere_llm = Cohere(cohere_api_key=COHERE_API_KEY, model="command")
 
-# 2. Download IPC from Wikipedia
-print("⚖️ Downloading IPC from Wikipedia...")
-try:
-    ipc_content = wikipedia.page("Indian Penal Code").text[:5000]
-except:
-    ipc_content = "IPC Document not found."
+def fetch_ipc_summary():
+    user_agent = "IPCChatbot/1.0 (contact: myemail@example.com)"
+    wiki_wiki = wikipediaapi.Wikipedia(user_agent=user_agent, language='en')
+    page = wiki_wiki.page("Indian Penal Code")
 
-# 3. Pydantic Model & Output Parser
+    if not page.exists():
+        raise ValueError("The Indian Penal Code page does not exist on Wikipedia.")
+
+    return page.text[:5000]
+
+ipc_content = fetch_ipc_summary()
+
 class IPCResponse(BaseModel):
-    section: str = Field(description="The relevant section number (or N/A)")
-    explanation: str = Field(description="The detailed legal explanation")
+    section: Optional[str]
+    explanation: Optional[str]
 
-parser = PydanticOutputParser(pydantic_object=IPCResponse)
+prompt_template = PromptTemplate(
+    input_variables=["question"],
+    template="""
+    You are a legal assistant chatbot specialized in the Indian Penal Code (IPC).
+    Refer to the following IPC document content to answer the user's query:
 
-# 4. Prompt Template
-template = """
-You are an IPC legal assistant. Answer the user's question using this content:
-{content}
-{format_instructions}
+    {ipc_content}
 
-Question: {question}
-"""
-prompt = PromptTemplate(
-    input_variables=["content", "question", "format_instructions"], 
-    template=template
+    User Question: {question}
+
+    Provide a detailed answer, mentioning the relevant section if applicable.
+    """
 )
 
-# 5. Core Chatbot Logic
-def on_click(b):
-    clear_output(wait=True); display(text_box, button)
-    if not text_box.value: return
-    
-    # Format prompt and ask AI
-    formatted_prompt = prompt.format(
-        content=ipc_content, 
-        question=text_box.value,
-        format_instructions=parser.get_format_instructions()
-    )
-    raw_response = llm.predict(formatted_prompt)
-    
-    # Let the parser magically handle all the formatting!
-    final_data = parser.parse(raw_response)
-    print("\n🎯 Response:\n", final_data.json(indent=2))
+def get_ipc_response(question: str) -> IPCResponse:
+    formatted_prompt = prompt_template.format(ipc_content=ipc_content, question=question)
+    response = cohere_llm.predict(formatted_prompt)
 
-# 6. Build Interactive GUI
-text_box = widgets.Text(description='You:', placeholder='Ask about IPC...')
-button = widgets.Button(description='Ask', button_style='info')
-button.on_click(on_click)
+    if "Section" in response:
+        section = response.split('Section')[1].split(':')[0].strip()
+        explanation = response.split(':', 1)[-1].strip()
+    else:
+        section = None
+        explanation = response.strip()
 
+    return IPCResponse(section=section, explanation=explanation)
+
+def display_response(response: IPCResponse):
+    print(f"Section: {response.section if response.section else 'N/A'}")
+    print(f"Explanation: {response.explanation}")
+
+def on_button_click(b):
+    user_question = text_box.value
+    try:
+        response = get_ipc_response(user_question)
+        display_response(response)
+    except Exception as e:
+        print(f"Error: {e}")
+
+text_box = widgets.Text(
+    value='',
+    placeholder='Ask about the Indian Penal Code',
+    description='You:',
+    disabled=False
+)
+button = widgets.Button(
+    description='Ask',
+    disabled=False,
+    button_style='',
+    tooltip='Click to ask a question about IPC',
+    icon='legal'
+)
+
+button.on_click(on_button_click)
 display(text_box, button)

@@ -6,10 +6,8 @@ from langchain.output_parsers import PydanticOutputParser
 from IPython.display import display, clear_output
 import ipywidgets as widgets
 
-# 1. Connect AI
 llm = Cohere(cohere_api_key=getpass.getpass("Enter Cohere API Key: "))
 
-# 2. Pydantic Schema & Parser
 class Details(BaseModel):
     founder: str = Field(description="Founder name")
     year: str = Field(description="Founded year")
@@ -23,22 +21,16 @@ prompt = PromptTemplate(
     template="Extract details.\n{format_instructions}\nTEXT:\n{text}"
 )
 
-# 3. UI and Core Logic
 def fetch_data(b):
     clear_output(wait=True)
-    display(text_box, button) # Keep UI visible
-    
+    display(text_box, button)
     if text_box.value:
-        # Search Wiki and run AI
         wiki_text = wikipedia.summary(text_box.value, sentences=10)
         formatted = prompt.format(text=wiki_text, format_instructions=parser.get_format_instructions())
         result = parser.parse(llm.predict(formatted))
-        
-        # Print the beautiful JSON!
         print("\n🎯 Result:")
         print(result.json(indent=2))
 
-# 4. Build and Display Widgets
 text_box = widgets.Text(description='Institution:')
 button = widgets.Button(description='Fetch Details', button_style='info')
 button.on_click(fetch_data)
